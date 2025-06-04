@@ -1,0 +1,508 @@
+<!--
+ * Quadris - A falling blocks game
+ * Version: 0.0.2
+ * Created by: David Slimp (rock808) <coder@David-Slimp.com>
+ * AI: OpenAI ChatGPT-o1-mini
+ *
+ * Copyright (c) 2024 David Slimp
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the conditions in the MIT License file.
+ * See LICENSE-MIT.txt for full license text.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quadris</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #000;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+
+        canvas {
+            border: 2px solid #fff;
+            background-color: #111;
+        }
+
+        #scoreboard {
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        #scoreboard div {
+            margin: 5px 0;
+        }
+
+        #next-piece {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        #next-piece canvas {
+            border: 2px solid #fff;
+            background-color: #111;
+        }
+
+        #debug-panel {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            font-family: monospace;
+            z-index: 1000;
+            border: 1px solid #333;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 600px) {
+            canvas {
+                width: 90vw;
+                height: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="debug-panel">Debug panel initialized</div>
+    
+    <div id="game-container">
+        <canvas id="game" width="300" height="600"></canvas>
+        <div id="scoreboard">
+            <div>Score: <span id="score">0</span></div>
+            <div>Level: <span id="level">1</span></div>
+        </div>
+        <div id="next-piece">
+            <h3>Next Piece</h3>
+            <canvas id="next" width="100" height="100"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // Game Constants
+        const canvas = document.getElementById('game');
+        const context = canvas.getContext('2d');
+        const nextCanvas = document.getElementById('next');
+        const nextContext = nextCanvas.getContext('2d');
+        const debugPanel = document.getElementById('debug-panel');
+
+        const ROWS = 20;
+        const COLS = 10;
+        const BLOCK_SIZE = 30;
+
+        // Timing variables
+        let lastTime = 0;
+        let dropCounter = 0;
+        let dropInterval = 1000; // Start with 1 second interval
+
+        // Game State
+        const gameState = {
+            arena: null,
+            player: {
+                pos: { x: 0, y: 0 },
+                matrix: null,
+                next: null,
+                score: 0,
+                level: 1,
+            },
+            running: true,
+            paused: false
+        };
+
+        // Quadromino Shapes
+        const quadrominoes = {
+            'T': [
+                [0, 1, 0],
+                [1, 1, 1],
+                [0, 0, 0],
+            ],
+            'O': [
+                [2, 2],
+                [2, 2],
+            ],
+            'L': [
+                [0, 0, 3],
+                [3, 3, 3],
+                [0, 0, 0],
+            ],
+            'J': [
+                [4, 0, 0],
+                [4, 4, 4],
+                [0, 0, 0],
+            ],
+            'I': [
+                [0, 0, 0, 0],
+                [5, 5, 5, 5],
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+            ],
+            'S': [
+                [0, 6, 6],
+                [6, 6, 0],
+                [0, 0, 0],
+            ],
+            'Z': [
+                [7, 7, 0],
+                [0, 7, 7],
+                [0, 0, 0],
+            ],
+        };
+
+        // Colors for quadrominos
+        const colors = [
+            null,
+            '#FF0D72', // T
+            '#0DC2FF', // O
+            '#0DFF72', // L
+            '#F538FF', // J
+            '#FF8E0D', // I
+            '#FFE138', // S
+            '#3877FF'  // Z
+        ];
+
+        // Utility Functions
+        function createMatrix(width, height) {
+            const matrix = [];
+            for (let y = 0; y < height; y++) {
+                matrix.push(new Array(width).fill(0));
+            }
+            return matrix;
+        }
+
+        function drawMatrix(matrix, offset, ctx = context) {
+            if (!matrix) return;
+            
+            matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        ctx.fillStyle = colors[value];
+                        ctx.fillRect(x + offset.x, y + offset.y, 1, 1);
+                        ctx.strokeStyle = '#000';
+                        ctx.lineWidth = 0.05;
+                        ctx.strokeRect(x + offset.x, y + offset.y, 1, 1);
+                    }
+                });
+            });
+        }
+
+        function draw() {
+            // Clear canvas
+            context.fillStyle = '#111';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw game arena
+            drawMatrix(gameState.arena, { x: 0, y: 0 });
+            
+            // Draw current piece
+            drawMatrix(gameState.player.matrix, gameState.player.pos);
+        }
+
+        function drawNext() {
+            nextContext.fillStyle = '#111';
+            nextContext.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
+            
+            if (gameState.player.next) {
+                // Center the next piece in the preview
+                const offsetX = (4 - gameState.player.next[0].length) / 2;
+                const offsetY = (4 - gameState.player.next.length) / 2;
+                drawMatrix(gameState.player.next, { x: offsetX, y: offsetY }, nextContext);
+            }
+        }
+
+        function merge(arena, player) {
+            player.matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        arena[y + player.pos.y][x + player.pos.x] = value;
+                    }
+                });
+            });
+        }
+
+        function collide(arena, player) {
+            const [m, o] = [player.matrix, player.pos];
+            
+            if (!m) return false;
+            
+            for (let y = 0; y < m.length; ++y) {
+                for (let x = 0; x < m[y].length; ++x) {
+                    if (m[y][x] !== 0 &&
+                        (arena[y + o.y] === undefined ||
+                         arena[y + o.y][x + o.x] === undefined ||
+                         arena[y + o.y][x + o.x] !== 0)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function rotate(matrix, dir) {
+            // Transpose matrix
+            for (let y = 0; y < matrix.length; ++y) {
+                for (let x = 0; x < y; ++x) {
+                    [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+                }
+            }
+            
+            // Reverse each row or column based on direction
+            if (dir > 0) {
+                matrix.forEach(row => row.reverse());
+            } else {
+                matrix.reverse();
+            }
+        }
+
+        function playerRotate(dir) {
+            const pos = gameState.player.pos.x;
+            let offset = 1;
+            rotate(gameState.player.matrix, dir);
+            
+            // Handle collision during rotation
+            while (collide(gameState.arena, gameState.player)) {
+                gameState.player.pos.x += offset;
+                offset = -(offset + (offset > 0 ? 1 : -1));
+                
+                // If offset is too large, rotation is not possible
+                if (offset > gameState.player.matrix[0].length) {
+                    rotate(gameState.player.matrix, -dir);
+                    gameState.player.pos.x = pos;
+                    return;
+                }
+            }
+        }
+
+        function playerDrop() {
+            gameState.player.pos.y++;
+            
+            if (collide(gameState.arena, gameState.player)) {
+                gameState.player.pos.y--;
+                merge(gameState.arena, gameState.player);
+                playerReset();
+                arenaSweep();
+                updateScore();
+            }
+            
+            dropCounter = 0;
+        }
+
+        function playerMove(dir) {
+            gameState.player.pos.x += dir;
+            
+            if (collide(gameState.arena, gameState.player)) {
+                gameState.player.pos.x -= dir;
+            }
+        }
+
+        function getRandomPiece() {
+            const pieces = 'TOLJISZ';
+            const type = pieces[Math.floor(Math.random() * pieces.length)];
+            return JSON.parse(JSON.stringify(quadrominoes[type]));
+        }
+
+        function playerReset() {
+            // Use next piece if available, otherwise get a random piece
+            gameState.player.matrix = gameState.player.next || getRandomPiece();
+            gameState.player.next = getRandomPiece();
+            
+            // Position piece at top middle
+            gameState.player.pos.y = 0;
+            gameState.player.pos.x = Math.floor(COLS / 2) - Math.floor(gameState.player.matrix[0].length / 2);
+            
+            // Game over check
+            if (collide(gameState.arena, gameState.player)) {
+                // Reset arena
+                gameState.arena.forEach(row => row.fill(0));
+                
+                // Reset score and level
+                gameState.player.score = 0;
+                gameState.player.level = 1;
+                
+                // Reset drop speed to initial value
+                dropInterval = 1000;
+                
+                updateScore();
+            }
+        }
+
+        function arenaSweep() {
+            let rowCount = 0;
+            
+            outer: for (let y = gameState.arena.length - 1; y >= 0; --y) {
+                for (let x = 0; x < gameState.arena[y].length; ++x) {
+                    if (gameState.arena[y][x] === 0) {
+                        continue outer;
+                    }
+                }
+                
+                // Remove the row and add a new one at the top
+                const row = gameState.arena.splice(y, 1)[0].fill(0);
+                gameState.arena.unshift(row);
+                ++y;
+                ++rowCount;
+            }
+            
+            // Update score based on rows cleared
+            if (rowCount > 0) {
+                gameState.player.score += rowCount * 100 * gameState.player.level;
+                
+                // Level up every 10 rows
+                if (gameState.player.score >= gameState.player.level * 1000) {
+                    gameState.player.level++;
+                    dropInterval = Math.max(50, 1000 - (gameState.player.level - 1) * 100);
+                }
+            }
+        }
+
+        function updateScore() {
+            document.getElementById('score').innerText = gameState.player.score;
+            document.getElementById('level').innerText = gameState.player.level;
+        }
+
+        function updateDebugPanel(deltaTime) {
+            debugPanel.innerHTML = `
+                Debug Info:<br>
+                DeltaTime: ${deltaTime ? deltaTime.toFixed(2) : 'N/A'} ms<br>
+                DropCounter: ${dropCounter.toFixed(2)}<br>
+                DropInterval: ${dropInterval}<br>
+                Player Position: (${gameState.player.pos.x}, ${gameState.player.pos.y})<br>
+                Game Running: ${gameState.running}<br>
+                Level: ${gameState.player.level}<br>
+                Score: ${gameState.player.score}
+            `;
+        }
+
+        function drawPauseScreen() {
+            // Draw semi-transparent overlay
+            context.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            context.fillRect(0, 0, canvas.width / BLOCK_SIZE, canvas.height / BLOCK_SIZE);
+            
+            // Draw pause text
+            context.fillStyle = '#fff';
+            context.font = '1px Arial';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText('PAUSED', COLS / 2, ROWS / 2);
+            context.font = '0.5px Arial';
+            context.fillText('Press P to continue', COLS / 2, ROWS / 2 + 1.5);
+        }
+
+        // Handle keyboard input
+        document.addEventListener('keydown', event => {
+            if (!gameState.running) return;
+            
+            switch(event.key) {
+                case 'ArrowLeft':
+                    if (!gameState.paused) playerMove(-1);
+                    break;
+                case 'ArrowRight':
+                    if (!gameState.paused) playerMove(1);
+                    break;
+                case 'ArrowDown':
+                    if (!gameState.paused) playerDrop();
+                    break;
+                case 'ArrowUp':
+                    if (!gameState.paused) playerRotate(1);
+                    break;
+                case 'z':
+                    if (!gameState.paused) playerRotate(-1);
+                    break;
+                case ' ':
+                    if (!gameState.paused) {
+                        // Hard drop
+                        while (!collide(gameState.arena, gameState.player)) {
+                            gameState.player.pos.y++;
+                        }
+                        gameState.player.pos.y--;
+                        merge(gameState.arena, gameState.player);
+                        playerReset();
+                        arenaSweep();
+                        updateScore();
+                        dropCounter = 0;
+                    }
+                    break;
+                case 'p':
+                    // Toggle pause state
+                    gameState.paused = !gameState.paused;
+                    if (gameState.paused) {
+                        drawPauseScreen();
+                    }
+                    break;
+            }
+        });
+
+        // Main game loop
+        function update(time = 0) {
+            const deltaTime = time - lastTime;
+            lastTime = time;
+            
+            if (!gameState.paused) {
+                dropCounter += deltaTime;
+                
+                if (dropCounter > dropInterval) {
+                    playerDrop();
+                }
+                
+                draw();
+                drawNext();
+            } else {
+                // If game is paused, redraw the pause screen
+                // to ensure it stays visible when window is resized
+                drawPauseScreen();
+            }
+            
+            // Always update the debug panel
+            updateDebugPanel(deltaTime);
+            
+            requestAnimationFrame(update);
+        }
+
+        // Initialize game
+        function init() {
+            // Scale context for proper rendering
+            context.scale(BLOCK_SIZE, BLOCK_SIZE);
+            nextContext.scale(BLOCK_SIZE / 10, BLOCK_SIZE / 10);
+            
+            // Initialize arena
+            gameState.arena = createMatrix(COLS, ROWS);
+            
+            // Initialize player pieces
+            gameState.player.next = getRandomPiece();
+            playerReset();
+            
+            // Initialize score display
+            updateScore();
+            
+            // Start game loop
+            update();
+            
+            console.log('Game initialized!');
+        }
+
+        // Start the game
+        init();
+    </script>
+</body>
+</html>
