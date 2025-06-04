@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>rock808 Quadris Game</title>
+    <style>
+        body {
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #game-container {
+            position: relative;
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+        }
+        #quadris {
+            border: 2px solid #fff;
+            background-color: #111;
+        }
+        #scoreboard {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 18px;
+        }
+        #scoreboard div {
+            margin-bottom: 10px;
+        }
+        #next {
+            border: 2px solid #fff;
+            background-color: #111;
+            padding: 10px;
+        }
+        #next h3 {
+            text-align: center;
+            margin: 0 0 10px 0;
+        }
+        #next-canvas {
+            display: block;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="quadris" width="320" height="640"></canvas>
+        <div>
+            <div id="scoreboard">
+                <div>Score: <span id="score">0</span></div>
+                <div>Level: <span id="level">1</span></div>
+                <div>Lines: <span id="lines">0</span></div>
+            </div>
+            <div id="next">
+                <h3>Next</h3>
+                <canvas id="next-canvas" width="120" height="120"></canvas>
+            </div>
+        </div>
+    </div>
+    <audio id="move-sound" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQA="></audio>
+    <audio id="rotate-sound" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQA="></audio>
+    <audio id="drop-sound" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQA="></audio>
+    <audio id="line-clear-sound" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQA="></audio>
+    <audio id="game-over-sound" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQA="></audio>
+    <script>
+        const canvas = document.getElementById('quadris');
+        const context = canvas.getContext('2d');
+        context.scale(20, 20); // Scale for better visibility
+
+        const nextCanvas = document.getElementById('next-canvas');
+        const nextContext = nextCanvas.getContext('2d');
+        nextContext.scale(20, 20);
+
+        // Sound Effects
+        const moveSound = document.getElementById('move-sound');
+        const rotateSound = document.getElementById('rotate-sound');
+        const dropSound = document.getElementById('drop-sound');
+        const lineClearSound = document.getElementById('line-clear-sound');
+        const gameOverSound = document.getElementById('game-over-sound');
+
+        // Define the arena (game board)
+        const arena = createMatrix(10, 20);
+
+        // Define the player
+        const player = {
+            pos: { x: 0, y: 0 },
+            matrix: null,
+            score: 0,
+            level: 1,
+            lines: 0,
+            dropInterval: 1000,
+            dropCounter: 0,
+            next: null
+        };
+
+        // Quadromino shapes
+        const quadrominoes = {
+            'T': [
+                [0, 0, 0],
+                [1, 1, 1],
+                [0, 1, 0],
+            ],
+            'O': [
+                [2, 2],
+                [2, 2],
+            ],
+            'L': [
+                [0, 3, 0],
+                [0, 3, 0],
+                [0, 3, 3],
+            ],
+            'J': [
+                [0, 4, 0],
+                [0, 4, 0],
+                [4, 4, 0],
+            ],
+            'I': [
+                [0, 5, 0, 0],
+                [0, 5, 0, 0],
+                [0, 5, 0, 0],
+                [0, 5, 0, 0],
+            ],
+            'S': [
+                [0, 6, 6],
+                [6, 6, 0],
+                [0, 0, 0],
+            ],
+            'Z': [
+                [7, 7, 0],
+                [0, 7, 7],
+                [0, 0, 0],
+            ]
+        };
+
+        // Colors for quadrominoes
+        const colors = [
+            null,
+            '#FF0D72',
+            '#0DC2FF',
+            '#0DFF72',
+            '#F538FF',
+            '#FF8E0D',
+            '#FFE138',
+            '#3877FF',
+        ];
+
+        // Initialize the game
+        function init() {
+            playerReset();
+            updateScore();
+            requestAnimationFrame(update);
+        }
+
+        // Create a matrix filled with zeros
+        function createMatrix(w, h) {
+            const matrix = [];
+            while (h--) {
+                matrix.push(new Array(w).fill(0));
+            }
+            return matrix;
+        }
+
+        // Create a quadromino shape
+        function createPiece(type) {
+            const quadromino = quadrominoes[type];
+            const matrix = quadromino.map(row => row.slice());
+            return matrix;
+        }
+
+        // Draw the matrix on the canvas
+        function draw() {
+            context.fillStyle = '#111';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            drawMatrix(arena, { x: 0, y: 0 });
+            drawMatrix(player.matrix, player.pos);
+        }
+
+        // Draw a matrix at a given position
+        function drawMatrix(matrix, offset) {
+            matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        context.fillStyle = colors[value];
+                        context.fillRect(x + offset.x,
+                                         y + offset.y,
+                                         1, 1);
+                    }
+                });
+            });
+        }
+
+        // Draw the next piece
+        function drawNext() {
+            nextContext.fillStyle = '#111';
+            nextContext.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
+            if (player.next) {
+                drawMatrix(player.next.matrix, { x: 1, y: 1 }, nextContext);
+            }
+        }
+
+        // Merge player matrix into arena
+        function merge(arena, player) {
+            player.matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        arena[y + player.pos.y][x + player.pos.x] = value;
+                    }
+                });
+            });
+        }
+
+        // Check for collision
+        function collide(arena, player) {
+            const [m, o] = [player.matrix, player.pos];
+            for (let y = 0; y < m.length; ++y) {
+                for (let x = 0; x < m[y].length; ++x) {
+                    if (m[y][x] !== 0 &&
+                       (arena[y + o.y] &&
+                        arena[y + o.y][x + o.x]) !== 0) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        // Player reset (spawn new quadromino)
+        function playerReset() {
+            if (!player.next) {
+                player.next = randomPiece();
+            }
+            player.matrix = player.next.matrix;
+            player.color = player.next.color;
+            player.pos.y = 0;
+            player.pos.x = Math.floor((arena[0].length / 2)) - Math.floor((player.matrix[0].length / 2));
+
+            player.next = randomPiece();
+
+            if (collide(arena, player)) {
+                arena.forEach(row => row.fill(0));
+                player.score = 0;
+                player.level = 1;
+                player.lines = 0;
+                player.dropInterval = 1000;
+                updateScore();
+                gameOverSound.play();
+            }
+            drawNext();
+        }
+
+        // Generate a random quadromino
+        function randomPiece() {
+            const types = 'TJLOSZI';
+            const type = types[Math.floor(Math.random() * types.length)];
+            return {
+                matrix: createPiece(type),
+                color: colors[quadrominoes[type][0].includes(0) ? quadrominoes[type][0].indexOf(1) : 1]
+            };
+        }
+
+        // Player movement
+        function playerMove(dir) {
+            player.pos.x += dir;
+            if (collide(arena, player)) {
+                player.pos.x -= dir;
+            } else {
+                moveSound.currentTime = 0;
+                moveSound.play();
+            }
+        }
+
+        // Player drop (soft drop)
+        function playerDrop() {
+            player.pos.y++;
+            if (collide(arena, player)) {
+                player.pos.y--;
+                merge(arena, player);
+                playerReset();
+                arenaSweep();
+                updateScore();
+                dropSound.play();
+            }
+            player.dropCounter = 0;
+        }
+
+        // Player rotate
+        function playerRotate(dir) {
+            const pos = player.pos.x;
+            let offset = 1;
+            rotate(player.matrix, dir);
+            while (collide(arena, player)) {
+                player.pos.x += offset;
+                offset = -(offset + (offset > 0 ? 1 : -1));
+                if (offset > player.matrix[0].length) {
+                    rotate(player.matrix, -dir);
+                    player.pos.x = pos;
+                    return;
+                }
+            }
+            rotateSound.currentTime = 0;
+            rotateSound.play();
+        }
+
+        // Rotate a matrix
+        function rotate(matrix, dir) {
+            for (let y = 0; y < matrix.length; ++y) {
+                for (let x = 0; x < y; ++x) {
+                    [
+                        matrix[x][y],
+                        matrix[y][x],
+                    ] = [
+                        matrix[y][x],
+                        matrix[x][y],
+                    ];
+                }
+            }
+            if (dir > 0) {
+                matrix.forEach(row => row.reverse());
+            } else {
+                matrix.reverse();
+            }
+        }
+
+        // Sweep completed lines
+        function arenaSweep() {
+            let rowCount = 1;
+            outer: for (let y = arena.length -1; y >=0; --y) {
+                for (let x = 0; x < arena[y].length; ++x) {
+                    if (arena[y][x] === 0) {
+                        continue outer;
+                    }
+                }
+                const row = arena.splice(y, 1)[0].fill(0);
+                arena.unshift(row);
+                y++;
+
+                player.score += rowCount * 10;
+                player.lines += 1;
+                rowCount *= 2;
+
+                lineClearSound.currentTime = 0;
+                lineClearSound.play();
+            }
+            // Increase level every 10 lines
+            if (player.lines >= player.level * 10) {
+                player.level++;
+                player.dropInterval *= 0.9; // Increase speed by reducing interval
+            }
+        }
+
+        // Update the game state
+        let lastTime = 0;
+        function update(time = 0) {
+            const deltaTime = time - lastTime;
+            lastTime = time;
+
+            player.dropCounter += deltaTime;
+            if (player.dropCounter > player.dropInterval) {
+                playerDrop();
+            }
+
+            draw();
+            drawNext();
+            requestAnimationFrame(update);
+        }
+
+        // Update the score display
+        function updateScore() {
+            document.getElementById('score').innerText = player.score;
+            document.getElementById('level').innerText = player.level;
+            document.getElementById('lines').innerText = player.lines;
+        }
+
+        // Listen to keyboard events
+        document.addEventListener('keydown', event => {
+            switch(event.keyCode) {
+                case 37: // Left arrow
+                    playerMove(-1);
+                    break;
+                case 39: // Right arrow
+                    playerMove(1);
+                    break;
+                case 40: // Down arrow
+                    playerDrop();
+                    break;
+                case 38: // Up arrow
+                    playerRotate(1);
+                    break;
+            }
+        });
+
+        // Start the game
+        init();
+    </script>
+</body>
+</html>
