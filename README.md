@@ -4,7 +4,7 @@
   # Quadris
   
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-  [![Version](https://img.shields.io/badge/version-0.0.2-blue.svg)](CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.0.3-blue.svg)](CHANGELOG.md)
   
   A modern, browser-based falling block puzzle game built with vanilla JavaScript and HTML5 Canvas.
 </div>
@@ -18,12 +18,11 @@ Play the latest version: [Quadris Demo](https://rock808.com/games/quadris/)
 - 🎯 Classic falling block gameplay with smooth controls
 - 🎨 Clean, responsive design that works on desktop and tablet
 - ⚡ Optimized performance with vanilla JavaScript
-- 🎵 Sound effects (coming soon)
 - 📊 Score tracking and level progression
-- ⏯️ Pause/resume functionality
 - 🔄 Hard drop and rotation controls
 - 👁️ Next piece preview
 - 🎯 Progressive difficulty increase
+- 🎨 Clean, responsive design
 
 ## 🚀 Getting Started
 
@@ -32,19 +31,18 @@ Play the latest version: [Quadris Demo](https://rock808.com/games/quadris/)
 - No installation required - works directly in the browser
 
 ### How to Play
-1. Open `quadris-v002.html` in your web browser
+1. Open `quadris-v003.html` in your web browser
 2. Use the following controls:
    - **← →** : Move piece left/right
    - **↑** : Rotate clockwise
-   - **Z** : Rotate counter-clockwise
    - **↓** : Soft drop (move down faster)
    - **Space** : Hard drop (instant drop)
-   - **P** : Pause game
 
 ## 🛠️ Development
 
 ### Project Structure
-- `quadris-v002.html` - Main game file (latest version)
+- `quadris-v003.html` - Current stable version (latest)
+- `quadris-v002.html` - Previous version
 - `quadris-v001.html` - Initial version (kept for reference)
 - `CHANGELOG.md` - Version history and changes
 - `PRD.md` - Product Requirements Document
@@ -52,15 +50,16 @@ Play the latest version: [Quadris Demo](https://rock808.com/games/quadris/)
 - `quadris-01.png` - Game screenshot
 
 ### Building and Running
-No build step required! Simply open `quadris-v002.html` in a web browser to play.
+No build step required! Simply open `quadris-v003.html` in a web browser to play.
 
 ## 📈 Roadmap
 
 ### Next Up MVP (v0.1.0)
 - [ ] any bugs fixed
 - [ ] verify all keys function as expected
-- [ ] 
+
 ### Future Features
+- [ ] Add 'P' key to pause game
 - [ ] Add sound effects
 - [ ] Implement high score system
 - [ ] Add game start screen
